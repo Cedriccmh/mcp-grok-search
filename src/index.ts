@@ -16,7 +16,7 @@ const SYSTEM_PROMPT = `You are a web search assistant. Your task:
 2. Provide a comprehensive, well-structured answer in the SAME LANGUAGE as the query
 3. Be factual and cite specific data points (versions, dates, numbers) when available`;
 
-type AgentPreset = 1 | 4 | 16;
+type SearchEffortPreset = "low" | "medium" | "high";
 
 interface ParsedResponse {
   content: string;
@@ -35,7 +35,7 @@ interface ResponsesApiResponse {
 }
 
 interface SearchOptions {
-  agents?: AgentPreset;
+  efforts?: SearchEffortPreset;
 }
 
 interface SearchConfig {
@@ -97,16 +97,16 @@ export function buildResponsesApiUrl(rawUrl: string): string {
   return url.toString();
 }
 
-export function resolveSearchConfig(defaultModel: string, agents?: AgentPreset): SearchConfig {
-  if (agents === 1) {
+export function resolveSearchConfig(defaultModel: string, efforts?: SearchEffortPreset): SearchConfig {
+  if (efforts === "low") {
     return { model: "grok-4.20-reasoning" };
   }
 
-  if (agents === 4) {
+  if (efforts === "medium") {
     return { model: "grok-4.20-multi-agent", reasoningEffort: "low" };
   }
 
-  if (agents === 16) {
+  if (efforts === "high") {
     return { model: "grok-4.20-multi-agent", reasoningEffort: "high" };
   }
 
@@ -116,9 +116,9 @@ export function resolveSearchConfig(defaultModel: string, agents?: AgentPreset):
 export function buildResponsesRequestBody(
   query: string,
   defaultModel: string,
-  agents?: AgentPreset
+  efforts?: SearchEffortPreset
 ): ResponsesApiRequestBody {
-  const config = resolveSearchConfig(defaultModel, agents);
+  const config = resolveSearchConfig(defaultModel, efforts);
 
   return {
     model: config.model,
@@ -154,7 +154,7 @@ async function callResponsesAPI(
       "Content-Type": "application/json",
       "Authorization": `Bearer ${GROK_API_KEY}`,
     },
-    body: JSON.stringify(buildResponsesRequestBody(query, GROK_MODEL, options.agents)),
+    body: JSON.stringify(buildResponsesRequestBody(query, GROK_MODEL, options.efforts)),
     signal,
   });
 
@@ -243,8 +243,8 @@ server.registerTool(
       "Use for: any scenario requiring real-time web information.",
     inputSchema: {
       query: z.string().describe("The search query in natural language"),
-      agents: z.union([z.literal(1), z.literal(4), z.literal(16)]).optional().describe(
-        "Optional search scale preset. 1 uses grok-4.20-reasoning, 4/16 use grok-4.20-multi-agent with official reasoning effort presets."
+      efforts: z.enum(["low", "medium", "high"]).optional().describe(
+        "Optional search scale preset. low uses grok-4.20-reasoning, medium/high use grok-4.20-multi-agent with official reasoning effort presets."
       ),
     },
     annotations: {
@@ -252,7 +252,7 @@ server.registerTool(
       openWorldHint: true,
     },
   },
-  async ({ query, agents }) => {
+  async ({ query, efforts }) => {
     if (!GROK_API_KEY) {
       return {
         content: [{ type: "text" as const, text: "Error: GROK_API_KEY environment variable is not set." }],
@@ -261,7 +261,7 @@ server.registerTool(
     }
 
     try {
-      const result = await callGrokAPI(query, { agents });
+      const result = await callGrokAPI(query, { efforts });
 
       return {
         content: [{ type: "text" as const, text: result.content }],

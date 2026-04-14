@@ -12,9 +12,9 @@ An MCP (Model Context Protocol) server that provides real-time web search capabi
 
 - Real-time web search powered by Grok AI
 - Uses the Responses API, which is the recommended path for Grok web search
-- `grok_web_search` supports an optional `agents` preset: `1`, `4`, or `16`
-- `agents=1` uses `grok-4.20-reasoning`
-- `agents=4/16` use `grok-4.20-multi-agent` with official reasoning presets
+- `grok_web_search` supports an optional `efforts` preset: `low`, `medium`, or `high`
+- `efforts=low` uses `grok-4.20-reasoning`
+- `efforts=medium/high` use `grok-4.20-multi-agent` with official reasoning presets
 - Configurable API endpoint, model, and timeout
 - Stdio transport for seamless MCP integration
 
@@ -40,7 +40,7 @@ npm run build
 | --- | --- | --- |
 | `GROK_API_KEY` | **(Required)** Your Grok API key | — |
 | `GROK_API_URL` | API endpoint URL | `https://api.x.ai/v1/chat/completions` |
-| `GROK_MODEL` | Default model used when `agents` is not passed | `grok-4.20-reasoning` |
+| `GROK_MODEL` | Default model used when `efforts` is not passed | `grok-4.20-reasoning` |
 | `GROK_TIMEOUT_MS` | Request timeout in ms | `180000` |
 
 #### Run
@@ -87,9 +87,9 @@ MIT
 
 - 基于 Grok AI 的实时网络搜索
 - 使用 Responses API，符合 Grok 当前推荐的搜索接入方式
-- `grok_web_search` 工具支持可选的 `agents` 预设：`1`、`4`、`16`
-- `agents=1` 使用 `grok-4.20-reasoning`
-- `agents=4/16` 使用 `grok-4.20-multi-agent` 和官方推荐的 `reasoning.effort`
+- `grok_web_search` 工具支持可选的 `efforts` 预设：`low`、`medium`、`high`
+- `efforts=low` 使用 `grok-4.20-reasoning`
+- `efforts=medium/high` 使用 `grok-4.20-multi-agent` 和官方推荐的 `reasoning.effort`
 - 可配置 API 端点、模型和超时时间
 - Stdio 传输，无缝对接 MCP 协议
 
@@ -115,7 +115,7 @@ npm run build
 | --- | --- | --- |
 | `GROK_API_KEY` | **（必填）** Grok API 密钥 | — |
 | `GROK_API_URL` | API 端点 URL | `https://api.x.ai/v1/chat/completions` |
-| `GROK_MODEL` | 不传 `agents` 时使用的默认模型 | `grok-4.20-reasoning` |
+| `GROK_MODEL` | 不传 `efforts` 时使用的默认模型 | `grok-4.20-reasoning` |
 | `GROK_TIMEOUT_MS` | 请求超时时间（毫秒） | `180000` |
 
 #### 运行
