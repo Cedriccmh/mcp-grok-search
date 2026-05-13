@@ -6,10 +6,24 @@ import { z } from "zod";
 const GROK_API_URL = normalizeApiUrl(
   process.env.GROK_API_URL || "https://chat.tabcode.cc/v1/chat/completions"
 );
+const IS_OPENROUTER = isOpenRouterEndpoint(GROK_API_URL);
 const GROK_RESPONSES_API_URL = buildResponsesApiUrl(GROK_API_URL);
-const GROK_API_KEY = process.env.GROK_API_KEY || "";
-const GROK_MODEL = process.env.GROK_MODEL || "grok-4.20-reasoning";
+const GROK_API_KEY =
+  process.env.GROK_API_KEY ||
+  (IS_OPENROUTER ? process.env.OPENROUTER_API_KEY ?? "" : "") ||
+  "";
+const GROK_MODEL =
+  process.env.GROK_MODEL || (IS_OPENROUTER ? "x-ai/grok-4.20" : "grok-4.20-reasoning");
 const REQUEST_TIMEOUT_MS = parseInt(process.env.GROK_TIMEOUT_MS || "180000", 10);
+
+export function isOpenRouterEndpoint(rawUrl: string): boolean {
+  try {
+    const u = new URL(rawUrl);
+    return u.hostname === "openrouter.ai" || u.hostname.endsWith(".openrouter.ai");
+  } catch {
+    return false;
+  }
+}
 
 const SYSTEM_PROMPT = `You are a web search assistant. Your task:
 1. Search the web thoroughly for the user's query
@@ -97,7 +111,24 @@ export function buildResponsesApiUrl(rawUrl: string): string {
   return url.toString();
 }
 
-export function resolveSearchConfig(defaultModel: string, efforts?: SearchEffortPreset): SearchConfig {
+export function resolveSearchConfig(
+  defaultModel: string,
+  efforts?: SearchEffortPreset,
+  isOpenRouter = false,
+): SearchConfig {
+  if (isOpenRouter) {
+    if (efforts === "low") {
+      return { model: "x-ai/grok-4.20" };
+    }
+    if (efforts === "medium") {
+      return { model: "x-ai/grok-4.20-multi-agent", reasoningEffort: "low" };
+    }
+    if (efforts === "high") {
+      return { model: "x-ai/grok-4.20-multi-agent", reasoningEffort: "high" };
+    }
+    return { model: defaultModel };
+  }
+
   if (efforts === "low") {
     return { model: "grok-4.20-reasoning" };
   }
@@ -137,10 +168,92 @@ async function callGrokAPI(query: string, options: SearchOptions = {}): Promise<
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
+    if (IS_OPENROUTER) {
+      return await callChatCompletionsAPI(query, controller.signal, options);
+    }
     return await callResponsesAPI(query, controller.signal, options);
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function callChatCompletionsAPI(
+  query: string,
+  signal: AbortSignal,
+  options: SearchOptions,
+): Promise<ParsedResponse> {
+  const config = resolveSearchConfig(GROK_MODEL, options.efforts, true);
+  const body: Record<string, unknown> = {
+    model: config.model,
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: query },
+    ],
+    plugins: [{ id: "web" }],
+    temperature: 0.2,
+  };
+  if (config.reasoningEffort) {
+    body.reasoning = { effort: config.reasoningEffort };
+  }
+
+  const response = await fetch(GROK_API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${GROK_API_KEY}`,
+      "HTTP-Referer": "https://github.com/Cedriccmh/mcp-grok-search",
+      "X-Title": "mcp-grok-search",
+    },
+    body: JSON.stringify(body),
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new HttpError(response.status, await response.text());
+  }
+
+  return parseChatCompletionsResponseText(await response.text());
+}
+
+interface ChatCompletionsResponse {
+  choices?: Array<{
+    message?: {
+      content?: string;
+      reasoning?: string;
+    };
+  }>;
+  error?: {
+    message?: string;
+  };
+}
+
+export function parseChatCompletionsResponseText(rawText: string): ParsedResponse {
+  let parsed: ChatCompletionsResponse;
+  try {
+    parsed = JSON.parse(rawText) as ChatCompletionsResponse;
+  } catch {
+    const preview = rawText.slice(0, 300).trim();
+    throw new Error(`Grok API returned non-JSON content: ${preview}`);
+  }
+
+  if (parsed.error?.message) {
+    throw new Error(`Grok API error: ${parsed.error.message}`);
+  }
+
+  const message = parsed.choices?.[0]?.message;
+  if (!message) {
+    throw new Error("Grok API response did not contain choices[0].message");
+  }
+
+  const content = typeof message.content === "string" ? message.content.trim() : "";
+  const reasoning =
+    typeof message.reasoning === "string" ? message.reasoning.trim() : "";
+
+  if (!content) {
+    throw new Error("Grok API response message had no content");
+  }
+
+  return extractContent(content, reasoning);
 }
 
 async function callResponsesAPI(
